@@ -54,14 +54,7 @@ def edit_workbook(wb, dic):  #, epic):
 		ws["A{}".format(row)].value = dic['issues'][i]['key']
 		ws["B{}".format(row)].value = dic['issues'][i]['fields']['summary']
 		ws["C{}".format(row)].value = dic['issues'][i]['key'] + ' ' + dic['issues'][i]['fields']['summary']
-		# if dic['issues'][i]['key'] in ['SENT2-23', 'SENT2-22', 'SENT2-15', 'SENT2-14', 'SENT2-12', 'SENT2-11', 'SENT2-1166']:
-		# 	ws["D{}".format(row)].value = "SENT 1.0"
-		# elif dic['issues'][i]['key'] in ['SENT2-9', 'SENT2-8', 'SENT2-7', 'SENT2-6', 'SENT2-5', 'SENT2-4', 'SENT2-3', 'SENT2-2', 'SENT2-10', 'SENT2-1']:
-		# 	ws["D{}".format(row)].value = "SENT 2.0"
-		# else:
-		# 	ws["D{}".format(row)].value = ""
 		ws["E{}".format(row)].value = dic['issues'][i]['fields'].get('customfield_11213','')
-		# ws["F{}".format(row)].value = dic['issues'][i]['fields']['assignee']['displayName']
 
 		row += 1
 
@@ -179,7 +172,6 @@ def collect_stories(wb):
 
 		ws2["A{}".format(row)].value = dic['issues'][i]['key']
 		ws2["B{}".format(row)].value = dic['issues'][i]['fields']['summary']
-		# ws2["C{}".format(row)].value = dic['issues'][i]['key'] + ' ' + dic['issues'][i]['fields']['summary']
 		ws2["C{}".format(row)].value = dic['issues'][i]['fields'].get('customfield_11213','')
 
 		if dic['issues'][i]['fields'].get('customfield_11701',''):
@@ -226,7 +218,7 @@ def collect_stories(wb):
 		ws2.add_table(tab2)
 
 
-def make_epic_pivot(wb):
+def make_epic_pivot_worksheet(wb):
 	from openpyxl.utils.dataframe import dataframe_to_rows
 
 	if "Epic Pivot" not in wb.sheetnames:
@@ -234,22 +226,56 @@ def make_epic_pivot(wb):
 	else:
 		ws = wb['Epic Pivot']
 
-	excel = pd.read_excel("{} SENT2 Status-PI2.xlsx".format(create_date()), sheet_name="Story")
-	column_order = ['Closed', 'Work Done', 'In Progress', 'No Progress']
-	epic_pt = pd.pivot_table(excel, index='Title', aggfunc=np.sum)
-	epic_pt = epic_pt.reindex(column_order, axis=1)
+	epic_pt = make_pivot()
 	
 	for r in dataframe_to_rows(epic_pt, header=True):
 		ws.append(r)
 
-def make_chart(df):
-	from openpyxl.chart import BarChart
+	ws.delete_rows(2, 1)
+
+def make_pivot(sprint=None):
+	if sprint == None:
+		excel = pd.read_excel("{} SENT2 Status-PI2.xlsx".format(create_date()), sheet_name="Story")
+		column_order = ['Closed', 'Work Done', 'In Progress', 'No Progress']
+		pt = pd.pivot_table(excel, index='Title', aggfunc=np.sum)
+		pt = pt.reindex(column_order, axis=1)
+	else:
+		excel = pd.read_excel("{} SENT2 Status-PI2.xlsx".format(create_date()), sheet_name="Story")
+		sprint = excel[excel['Sprint']==sprint]
+		column_order = ['Closed', 'Work Done', 'In Progress', 'No Progress']
+		pt = pd.pivot_table(sprint, index='Title', aggfunc=np.sum)
+		pt = pt.reindex(column_order, axis=1)
+
+	return pt
+
+def make_sprint_pivot_worksheet(wb):
+	from openpyxl.utils.dataframe import dataframe_to_rows
+
+	if "Sprint Pivot" not in wb.sheetnames:
+		ws = wb.create_sheet(title="Sprint Pivot")
+	else:
+		ws = wb['Sprint Pivot']
+
+	sprint_pt = make_pivot('*18.Q2.2.1 (Ends 6/4)')
+	
+	for r in dataframe_to_rows(sprint_pt, header=True):
+		ws.append(r)	
+
+	ws.delete_rows(2, 1)
+
+def make_chart(ws):
+	from openpyxl.chart import BarChart, Reference
 
 	chart = BarChart()
 	chart.type= 'bar'
 	chart.style = 10
 	chart.title = "Epic PI Progress"
+	chart.grouping = 'stacked'
+	
+	data = Reference(ws, min_row=2, max_row=ws.max_row, min_col=2, max_col=ws.max_column)
+	chart.add_data(data)
 
+	ws.add_chart(chart,"F1")
 
 def post_edit(wb):
 	print('Editing workbook after dumping data')
@@ -271,12 +297,10 @@ def post_edit(wb):
 		ws['O{}'.format(row)].value = '=IF(ISNUMBER(SEARCH("Security",INDEX(Epic!$C$2:$C${t_row},MATCH("{k_row}",Epic!$A$2:$A${t_row},0)))),"Security Roll up",INDEX(Epic!$C$2:$C${t_row},MATCH("{k_row}",Epic!$A$2:$A${t_row},0)))'.format(t_row = max_epic_row, k_row = epic_key)
 		ws['P{}'.format(row)].value = '=IF([@Title]="Security Roll up","SENT 1.0",VLOOKUP([@[Epic Link]],Epic[#Data],4,))'
 
-	make_epic_pivot(wb)
+	make_epic_pivot_worksheet(wb)
+	make_sprint_pivot_worksheet(wb)
 
-	ws = wb["Epic Pivot"]
-	ws.delete_rows(2, 1)
 	save_workbook(wb)
-
 
 
 if __name__ == "__main__":
@@ -285,5 +309,4 @@ if __name__ == "__main__":
 	epics = get_epics(fil)
 	edit_workbook(wb, epics)
 	save_workbook(wb)
-	# make_epic_pivot()
 	post_edit(wb)
